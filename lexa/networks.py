@@ -401,7 +401,11 @@ class ActionHead(tools.Module):
       self, size, layers, units, act=tf.nn.elu, dist='trunc_normal',
       init_std=0.0, min_std=0.1, action_disc=5, temp=0.1, outscale=0):
     # assert min_std <= 2
-    self._size = size
+    if isinstance(size, int):
+      self._size = size
+    else:
+      self._size = np.sum(size)
+      self._shape = size
     self._layers = layers
     self._units = units
     self._dist = dist
@@ -481,6 +485,17 @@ class ActionHead(tools.Module):
         x = tf.cast(x, dtype)
       temp = self._temp
       dist = tools.GumbleDist(temp, x, dtype=dtype)
+    elif self._dist == 'multi_onehot':
+      dists = []
+      x = self.get(f'hout', tfkl.Dense, self._size)(x)
+      x = tf.cast(x, tf.float32)
+      start_idx = 0
+      for size in self._shape:
+        y = x[..., start_idx:start_idx + size]
+        dist = tools.OneHotDist(y, dtype=dtype)
+        dist = tools.DtypeDist(dist, dtype)
+        dists.append(dist)
+      dist = ConcatJointDistribution(dists)
     else:
       raise NotImplementedError(self._dist)
     return dist
@@ -524,3 +539,21 @@ def get_mlp_model(name, hidden_units, out_dim):
         model.add(tfk.layers.Dense(units, activation='elu'))
     model.add(tfk.layers.Dense(out_dim, activation='tanh'))
   return model
+
+
+class ConcatJointDistribution(tfd.JointDistributionSequential):
+    def __init__(self, dists):
+      # self.batch_size = model[0].logits.shape[0]
+      self.dists = dists
+      super().__init__(dists)
+
+    # Override the sample function to return a single tensor concatenating all the samples
+    def sample(self):
+      samples = super().sample()
+      return tf.concat(samples, axis=-1)
+
+    # Split tensor into list and then applying the original log_prob function
+    def log_prob(self, value):
+      event_shape_list = [s[0] for s in self.event_shape]
+      value = tf.split(value, event_shape_list, axis=-1)
+      return super().log_prob(value)

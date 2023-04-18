@@ -92,11 +92,16 @@ def main(logdir, config):
 
   print('Simulate agent.')
   train_dataset = make_dataset(train_eps, config)
+  print('Made train dataset')
   eval_dataset = iter(make_dataset(eval_eps, config))
+  print('Made eval dataset')
+  # TODO: script is getting stuck at the line below
   agent = GCDreamer(config, logger, train_dataset)
+  print('GCDreamer instantiated')
   if (logdir / 'variables.pkl').exists():
     agent.load(logdir / 'variables.pkl')
     agent._should_pretrain._once = False
+  print('loaded logdir')
 
   pathlib.Path(logdir / "distance_func_logs_trained_model").mkdir(parents=True, exist_ok = True)
 
@@ -127,6 +132,16 @@ def main(logdir, config):
       all_eps_data.append(ep_data_across_goals)
 
     if ep_idx == 0:
+      
+      # Extend shorter videos with copies of the final frame so that they can be concatenated
+      max_len = max([e.shape[1] for e in executions])
+      for i, execution in enumerate(executions):
+        num_frames_to_add = max_len - execution.shape[1]
+        if num_frames_to_add > 0:
+          last_frame = execution[:, -1:] # (1, 1, 64, 64, 3)
+          padding = np.repeat(last_frame, num_frames_to_add, axis=1)
+          executions[i] = np.concatenate((execution, padding), axis=1)
+
       executions = np.concatenate(executions, 0)
       goals = np.stack(goals, 0)
       goals = np.repeat(goals, executions.shape[1], 1)

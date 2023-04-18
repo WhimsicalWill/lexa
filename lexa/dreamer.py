@@ -231,12 +231,22 @@ def make_env(config, logger, mode, train_eps, eval_eps, use_goal_idx=False, log_
     env = envs.PadActions(env, list(_env.action_space for _env in env.envs))
     env = wrappers.NormalizeActions(env)
 
+  elif config.task == 'crafter':
+   
+    env = envs.CrafterEnv(use_goal_idx, log_per_goal)
+    env = wrappers.OneHotAction(env)
+
+  elif config.task == 'powder':
+    
+    env = envs.PowderWorldEnv(use_goal_idx, log_per_goal)
+    env = wrappers.MultiOneHotAction(env)
+
   else:
     raise NotImplementedError(config.task)
   env = wrappers.TimeLimit(env, config.time_limit)
   callbacks = [functools.partial(
       process_episode, config, logger, mode, train_eps, eval_eps)]
-  env = wrappers.CollectDataset(env, callbacks)
+  env = wrappers.CollectDataset(env, callbacks, batch_length=config.batch_length)
   env = wrappers.RewardObs(env)
   return env
 
@@ -323,7 +333,12 @@ def create_envs(config, logger):
   train_envs = [make('train', log_per_goal=True) for _ in range(config.envs)]
   eval_envs = [make('eval', use_goal_idx=True, log_per_goal=config.test_log_per_goal) for _ in range(config.envs)]
   acts = train_envs[0].action_space
-  config.num_actions = acts.n if hasattr(acts, 'n') else acts.shape[0]
+  if hasattr(acts, 'nvec'):
+    config.num_actions = acts.nvec
+  elif hasattr(acts, 'n'):
+    config.num_actions = acts.n
+  else:
+    config.num_actions =  acts.shape[0]
   return eval_envs, eval_eps, train_envs, train_eps, acts
 
 

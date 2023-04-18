@@ -15,11 +15,11 @@ defaults:
   expl_gifs: False
 
   # Environment
-  task: 'dmc_walker_walk'
+  task: 'powder'
   size: [64, 64]
   envs: 1
-  action_repeat: 2
-  time_limit: 150
+  action_repeat: 1
+  time_limit: 1000
   prefill: 2500
   eval_noise: 0.0
   clip_rewards: 'identity'
@@ -95,7 +95,7 @@ defaults:
   imag_gradient: 'dynamics'
   imag_gradient_mix: 1.0
   imag_sample: True
-  actor_dist: 'trunc_normal'
+  actor_dist: 'onehot'
   actor_entropy: '1e-4'
   actor_state_entropy: 0.0
   actor_init_std: 1.0

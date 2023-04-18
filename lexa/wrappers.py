@@ -66,10 +66,11 @@ class Atari:
 
 class CollectDataset:
 
-  def __init__(self, env, callbacks=None, precision=32):
+  def __init__(self, env, callbacks=None, precision=32, batch_length=50):
     self._env = env
     self._callbacks = callbacks or ()
     self._precision = precision
+    self._batch_length = batch_length
     self._episode = None
 
   def __getattr__(self, name):
@@ -84,7 +85,7 @@ class CollectDataset:
     transition['discount'] = info.get('discount', np.array(1 - float(done)))
 
     self._episode.append(transition)
-    if done:
+    if done and len(self._episode) > self._batch_length:
       episode = {k: [t[k] for t in self._episode] for k in self._episode[0]}
       episode = {k: self._convert(v) for k, v in episode.items()}
       episode['idx_repeated'] = np.ones(len(episode['reward']), dtype=np.int32)*self._env.get_goal_idx()
@@ -201,6 +202,52 @@ class OneHotAction:
     reference[index] = 1.0
     return reference
 
+class MultiOneHotAction:
+
+  def __init__(self, env):
+    assert isinstance(env.action_space, gym.spaces.MultiDiscrete)
+    self._env = env
+    self._random = np.random.RandomState()
+    self.nvec = env.action_space.nvec
+    self.n_flattened = np.sum(self.nvec)
+
+  def __getattr__(self, name):
+    return getattr(self._env, name)
+
+  @property
+  def action_space(self):
+    flattened_shape = (np.sum(self.nvec),)
+    space = gym.spaces.Box(low=0, high=1, shape=flattened_shape, dtype=np.float32)
+    space.nvec = self.nvec
+    space.sample = self._sample_action
+    return space
+
+  def step(self, multi_action):
+    indices, references = [], []
+    start_idx = 0
+    for n_act in self.nvec:
+      action = multi_action[start_idx:start_idx+n_act]
+      index = np.argmax(action).astype(int)
+      reference = np.zeros_like(action)
+      reference[index] = 1
+      indices.append(index)
+      references.append(reference)
+      start_idx += n_act
+    if not np.allclose(np.concatenate(references), multi_action):
+      raise ValueError(f'Invalid multi-one-hot action:\n{multi_action}')
+    return self._env.step(np.array(indices, dtype=np.int32))
+
+  def reset(self):
+    return self._env.reset()
+
+  def _sample_action(self):
+    multi_action = []
+    for n_act in self.nvec:
+      index = self._random.randint(0, n_act)
+      reference = np.zeros(n_act, dtype=np.float32)
+      reference[index] = 1.0
+      multi_action.append(reference)
+    return np.concatenate(multi_action)
 
 class RewardObs:
 
